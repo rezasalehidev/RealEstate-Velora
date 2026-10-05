@@ -1,119 +1,327 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Scroll-driven cinematic video hero hook.
+ * Scroll-driven 3D Video Scrubbing Hook.
  *
- * Uses a single rAF-throttled scroll listener that writes GPU-friendly
- * transforms directly to DOM refs — no React state, no re-renders.
- *
- * The outer section should be taller than the viewport (e.g. 200vh).
- * The inner sticky container stays pinned while the user scrolls through
- * the extra height, and scroll progress (0→1) drives the video transform.
+ * Maps user scroll position directly to the 3D video playback timeline:
+ * - Scroll DOWN: Video scrubs forward frame-by-frame from 0.0s to end.
+ * - Scroll UP: Video smoothly scrubs backward frame-by-frame.
+ * - Stopped scrolling: Video holds the exact frame.
+ * - rAF loop + lerp interpolation: butter-smooth, jitter-free 60fps performance.
+ * - Non-blocking seeking: coordinates with browser decode pipeline (seeked event / fastSeek).
+ * - Zero React re-renders during scrubbing (all direct DOM ref mutations).
  */
+
+const FALLBACK_DURATION = 5.125
+const SCRUB_END_PROGRESS = 0.72 // Video scrubbing spans 0% to 72% of the Hero scroll timeline
+
+function getChapterTitle(time: number): string {
+  if (time < 1.3) return '01 // SUNSET EXTERIOR & PATIO'
+  if (time < 2.6) return '02 // REFLECTIVE INFINITY POOL'
+  if (time < 3.9) return '03 // ARCHITECTURAL GLASS ATRIUM'
+  return '04 // GRAND LIVING SANCTUARY'
+}
+
+function formatTime(seconds: number): string {
+  const s = Math.max(0, seconds)
+  const mins = Math.floor(s / 60)
+  const secs = (s % 60).toFixed(1)
+  return `${mins < 10 ? '0' : ''}${mins}:${parseFloat(secs) < 10 ? '0' : ''}${secs}s`
+}
+
 export function useScrollVideo() {
   const containerRef = useRef<HTMLElement>(null)
   const videoLayerRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const overlayRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const initialContentRef = useRef<HTMLDivElement>(null)
+  const climaxContentRef = useRef<HTMLDivElement>(null)
+  const hudRef = useRef<HTMLDivElement>(null)
+  const hudProgressBarRef = useRef<HTMLDivElement>(null)
+  const hudTimeRef = useRef<HTMLSpanElement>(null)
+  const hudChapterRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     const container = containerRef.current
     const videoLayer = videoLayerRef.current
-    const content = contentRef.current
-    const overlay = overlayRef.current
     const video = videoRef.current
-    if (!container || !videoLayer || !content) return
+    const overlay = overlayRef.current
+    const initialContent = initialContentRef.current
+    const climaxContent = climaxContentRef.current
+    const hud = hudRef.current
+    const hudProgressBar = hudProgressBarRef.current
+    const hudTime = hudTimeRef.current
+    const hudChapter = hudChapterRef.current
+
+    if (!container || !videoLayer || !video) return
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const isMobile = window.matchMedia('(max-width: 767px)').matches
 
-    // Best-effort autoplay (muted + playsInline makes this reliable)
-    if (video) {
-      video.play().catch(() => {})
+    let videoDuration = FALLBACK_DURATION
+    if (video.duration && isFinite(video.duration) && video.duration > 0) {
+      videoDuration = video.duration
     }
 
-    let ticking = false
+    const onLoadedMetadata = () => {
+      if (video.duration && isFinite(video.duration) && video.duration > 0) {
+        videoDuration = video.duration
+      }
+    }
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
 
-    const update = () => {
-      ticking = false
+    // State tracking variables
+    let hasUserInteracted = window.scrollY > 5
+    let targetTime = 0
+    let smoothedTime = 0
+    let isSeeking = false
+    let pendingTargetTime: number | null = null
+    let animFrameId: number | null = null
+    let isRunning = true
+
+    // Initial entrance behavior:
+    // If user is at scroll 0, start muted autoplay until the first interaction.
+    // If user has already scrolled, pause immediately.
+    if (!reducedMotion && !hasUserInteracted) {
+      video.play().catch(() => {
+        video.pause()
+      })
+    } else {
+      video.pause()
+    }
+
+    // Direct seeking function that prevents decode flooding
+    const seekTo = (time: number) => {
+      if (!video || !isFinite(time)) return
+      const clamped = Math.max(0, Math.min(videoDuration - 0.01, time))
+
+      if (isSeeking || video.seeking) {
+        pendingTargetTime = clamped
+        return
+      }
+
+      if (Math.abs(video.currentTime - clamped) < 0.012) {
+        return
+      }
+
+      try {
+        isSeeking = true
+        if ('fastSeek' in video && typeof (video as any).fastSeek === 'function') {
+          (video as any).fastSeek(clamped)
+        } else {
+          video.currentTime = clamped
+        }
+      } catch {
+        video.currentTime = clamped
+      }
+    }
+
+    const onSeeked = () => {
+      isSeeking = false
+      if (pendingTargetTime !== null) {
+        const next = pendingTargetTime
+        pendingTargetTime = null
+        seekTo(next)
+      }
+    }
+    video.addEventListener('seeked', onSeeked)
+
+    // Lock scroll control on ANY user interaction
+    const lockScrollControl = () => {
+      if (!hasUserInteracted) {
+        hasUserInteracted = true
+        if (!video.paused) {
+          video.pause()
+        }
+      }
+    }
+
+    window.addEventListener('wheel', lockScrollControl, { passive: true })
+    window.addEventListener('touchmove', lockScrollControl, { passive: true })
+    window.addEventListener('keydown', lockScrollControl, { passive: true })
+
+    // Continuous 60fps render loop
+    const render = () => {
+      if (!isRunning) return
 
       const rect = container.getBoundingClientRect()
       const scrollable = rect.height - window.innerHeight
-      const progress =
-        scrollable > 0
-          ? Math.min(1, Math.max(0, -rect.top / scrollable))
-          : 1
+      const rawProgress = scrollable > 0 ? Math.min(1, Math.max(0, -rect.top / scrollable)) : 0
 
-      const eased = easeOutCubic(progress)
+      // If user scrolls at all, lock video playback to scroll
+      if (rawProgress > 0.001 || window.scrollY > 2) {
+        lockScrollControl()
+      }
 
       if (reducedMotion) {
-        // Simple fade only — no transforms, no filters
-        videoLayer.style.opacity = String(1 - progress)
+        // Fallback for reduced motion
+        videoLayer.style.opacity = String(1 - rawProgress)
         videoLayer.style.transform = 'none'
-        videoLayer.style.filter = 'none'
-        content.style.opacity = '1'
-        content.style.transform = 'none'
-        if (overlay) overlay.style.opacity = String(1 - progress)
-      } else if (isMobile) {
-        // Simplified: opacity + very subtle scale, no blur
-        videoLayer.style.opacity = (1 - eased).toFixed(3)
-        videoLayer.style.transform = `scale(${(1.02 - 0.04 * eased).toFixed(4)})`
-        videoLayer.style.filter = 'none'
-        content.style.opacity = (progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) * 2.5)).toFixed(3)
-        content.style.transform = 'none'
-        if (overlay) overlay.style.opacity = (1 - eased).toFixed(3)
+        if (overlay) overlay.style.opacity = String(1 - rawProgress)
+        if (initialContent) {
+          initialContent.style.opacity = String(1 - rawProgress * 2)
+          initialContent.style.pointerEvents = rawProgress > 0.4 ? 'none' : 'auto'
+        }
+        animFrameId = requestAnimationFrame(render)
+        return
+      }
+
+      if (hasUserInteracted) {
+        // --- 1. Video Timeline Scrubbing ---
+        if (rawProgress <= SCRUB_END_PROGRESS) {
+          const videoProgress = rawProgress / SCRUB_END_PROGRESS
+          targetTime = videoProgress * videoDuration
+        } else {
+          targetTime = videoDuration - 0.01 // Hold final frame
+        }
+
+        // Lerp smoothedTime toward targetTime for smooth momentum
+        const timeDelta = targetTime - smoothedTime
+        if (Math.abs(timeDelta) > 0.001) {
+          // Responsive lerp: 0.22 for mobile/desktop creates smooth glide without perceptible lag
+          smoothedTime += timeDelta * 0.22
+          if (Math.abs(targetTime - smoothedTime) < 0.004) {
+            smoothedTime = targetTime
+          }
+          seekTo(smoothedTime)
+        } else if (pendingTargetTime !== null && !isSeeking && !video.seeking) {
+          const next = pendingTargetTime
+          pendingTargetTime = null
+          seekTo(next)
+        }
       } else {
-        // Full cinematic experience
-        const vOpacity = 1 - eased
-        const vScale = 1.05 - 0.1 * eased // 1.05 → 0.95
-        const vTranslateY = -8 * eased // 0 → -8%
-        const vBlur = 6 * eased // 0 → 6px
-        const vBrightness = 1 - 0.3 * eased // 1 → 0.7
+        // Before user interacts, track current video time for HUD
+        smoothedTime = video.currentTime || 0
+      }
+
+      // --- 2. HUD Scrubber & Chapter Cues ---
+      if (hud && hudProgressBar && hudTime && hudChapter) {
+        if (rawProgress > 0.02 && rawProgress < 0.72) {
+          hud.style.opacity = '1'
+          hud.style.transform = 'translate(-50%, 0)'
+          hud.style.pointerEvents = 'auto'
+
+          const scrubRatio = Math.min(1, Math.max(0, smoothedTime / videoDuration))
+          hudProgressBar.style.transform = `scaleX(${scrubRatio})`
+          hudTime.textContent = `${formatTime(smoothedTime)} / ${formatTime(videoDuration)}`
+          hudChapter.textContent = getChapterTitle(smoothedTime)
+        } else {
+          hud.style.opacity = '0'
+          hud.style.transform = 'translate(-50%, 12px)'
+          hud.style.pointerEvents = 'none'
+        }
+      }
+
+      // --- 3. Initial Hero Content Fade Out (0.0 -> 0.16) ---
+      if (initialContent) {
+        if (rawProgress <= 0.18) {
+          const p = rawProgress / 0.16
+          const opacity = Math.max(0, 1 - p)
+          const translateY = -p * 35
+          initialContent.style.opacity = opacity.toFixed(3)
+          initialContent.style.transform = `translate3d(0, ${translateY.toFixed(1)}px, 0)`
+          initialContent.style.pointerEvents = p > 0.5 ? 'none' : 'auto'
+          initialContent.style.visibility = opacity <= 0 ? 'hidden' : 'visible'
+        } else {
+          initialContent.style.opacity = '0'
+          initialContent.style.pointerEvents = 'none'
+          initialContent.style.visibility = 'hidden'
+        }
+      }
+
+      // --- 4. Climax Content Emergence (0.72 -> 1.0) ---
+      // Strictly hidden until video finishes its 3D camera flight!
+      if (climaxContent) {
+        if (rawProgress >= 0.72 && rawProgress <= 0.98) {
+          let cp = 0
+          if (rawProgress < 0.82) {
+            // Smooth entrance: 0.72 -> 0.82
+            cp = (rawProgress - 0.72) / 0.10
+          } else if (rawProgress <= 0.91) {
+            // Prominent hero focus: 0.82 -> 0.91
+            cp = 1
+          } else {
+            // Gentle dissolve as section releases: 0.91 -> 0.98
+            cp = Math.max(0, 1 - (rawProgress - 0.91) / 0.07)
+          }
+
+          const translateY = (1 - cp) * 24
+          climaxContent.style.opacity = cp.toFixed(3)
+          climaxContent.style.transform = `translate3d(0, ${translateY.toFixed(1)}px, 0)`
+          climaxContent.style.pointerEvents = cp > 0.5 ? 'auto' : 'none'
+          climaxContent.style.visibility = cp <= 0 ? 'hidden' : 'visible'
+        } else {
+          climaxContent.style.opacity = '0'
+          climaxContent.style.pointerEvents = 'none'
+          climaxContent.style.visibility = 'hidden'
+        }
+      }
+
+      // --- 5. Video Layer Cinematic Transformation ---
+      if (rawProgress <= SCRUB_END_PROGRESS) {
+        // While user is scrubbing through the 3D tour
+        videoLayer.style.opacity = '1'
+        videoLayer.style.transform = 'translate3d(0, 0, 0) scale(1)'
+        videoLayer.style.filter = 'none'
+      } else {
+        // Final transition: subtle scale and fade as next section enters
+        const transitionP = (rawProgress - SCRUB_END_PROGRESS) / (1 - SCRUB_END_PROGRESS)
+        const vOpacity = Math.max(0, 1 - transitionP * 0.85)
+        const vScale = isMobile ? 1 : 1 + transitionP * 0.04
+        const vTranslateY = isMobile ? 0 : -transitionP * 3
 
         videoLayer.style.opacity = vOpacity.toFixed(3)
-        videoLayer.style.transform = `scale(${vScale.toFixed(4)}) translateY(${vTranslateY.toFixed(2)}%)`
-        videoLayer.style.filter = `blur(${vBlur.toFixed(2)}px) brightness(${vBrightness.toFixed(3)})`
-
-        // Content: full opacity until 50%, then lifts and fades
-        const cOpacity = progress < 0.5 ? 1 : Math.max(0, 1 - (progress - 0.5) * 2)
-        const cTranslateY = -40 * eased
-        content.style.opacity = cOpacity.toFixed(3)
-        content.style.transform = `translateY(${cTranslateY.toFixed(2)}px)`
-
-        if (overlay) overlay.style.opacity = (1 - eased).toFixed(3)
+        videoLayer.style.transform = `translate3d(0, ${vTranslateY.toFixed(1)}%, 0) scale(${vScale.toFixed(4)})`
       }
 
-      // Performance: hide + pause when the hero is fully scrolled through
-      if (progress >= 0.98) {
-        videoLayer.style.display = 'none'
-        if (video && !video.paused) video.pause()
+      // --- 6. Overlay Dynamics ---
+      if (overlay) {
+        if (rawProgress <= 0.16) {
+          // Stronger overlay at very top for hero text contrast
+          overlay.style.opacity = (1 - rawProgress * 1.5).toFixed(3)
+        } else if (rawProgress <= SCRUB_END_PROGRESS) {
+          // Minimalist vignette during 3D video scrubbing for crystal clarity
+          overlay.style.opacity = '0.2'
+        } else {
+          // Deepen overlay slightly as transition begins
+          const op = 0.2 + (rawProgress - SCRUB_END_PROGRESS) * 1.8
+          overlay.style.opacity = Math.min(0.85, op).toFixed(3)
+        }
+      }
+
+      // Performance: hide video when completely scrolled past
+      if (rawProgress >= 0.99) {
+        videoLayer.style.visibility = 'hidden'
       } else {
-        videoLayer.style.display = ''
-        if (video && video.paused) video.play().catch(() => {})
+        videoLayer.style.visibility = 'visible'
       }
+
+      animFrameId = requestAnimationFrame(render)
     }
 
-    const onScroll = () => {
-      if (!ticking) {
-        ticking = true
-        requestAnimationFrame(update)
-      }
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll, { passive: true })
-    update()
+    animFrameId = requestAnimationFrame(render)
 
     return () => {
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
+      isRunning = false
+      if (animFrameId) cancelAnimationFrame(animFrameId)
+      window.removeEventListener('wheel', lockScrollControl)
+      window.removeEventListener('touchmove', lockScrollControl)
+      window.removeEventListener('keydown', lockScrollControl)
+      video.removeEventListener('loadedmetadata', onLoadedMetadata)
+      video.removeEventListener('seeked', onSeeked)
     }
   }, [])
 
-  return { containerRef, videoLayerRef, contentRef, overlayRef, videoRef }
-}
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3)
+  return {
+    containerRef,
+    videoLayerRef,
+    videoRef,
+    overlayRef,
+    initialContentRef,
+    climaxContentRef,
+    hudRef,
+    hudProgressBarRef,
+    hudTimeRef,
+    hudChapterRef,
+  }
 }
