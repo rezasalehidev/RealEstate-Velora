@@ -37,6 +37,7 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        persian: ['Vazirmatn', 'system-ui', 'sans-serif'],
         script: ['"Caveat"', 'cursive'],
       },
       fontSize: {

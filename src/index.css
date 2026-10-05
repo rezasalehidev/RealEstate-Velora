@@ -13,6 +13,26 @@
   html {
     scroll-behavior: smooth;
   }
+
+  /* RTL & Persian Typography */
+  [dir="rtl"], html[lang="fa"] {
+    font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+    letter-spacing: 0 !important;
+  }
+
+  [dir="rtl"] .font-script {
+    font-family: 'Vazirmatn', cursive, sans-serif;
+    font-weight: 700;
+  }
+
+  [dir="rtl"] .eyebrow {
+    letter-spacing: 0.06em;
+  }
+
+  /* Flip arrow icons in RTL direction */
+  [dir="rtl"] .rtl-flip {
+    transform: scaleX(-1);
+  }
 }
 
 @layer components {
@@ -101,17 +121,6 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  will-change: transform, opacity;
-}
-
-.hero-hud {
-  position: absolute;
-  bottom: 2rem;
-  left: 50%;
-  transform: translate(-50%, 12px);
-  z-index: 20;
-  opacity: 0;
-  pointer-events: none;
   will-change: transform, opacity;
 }
 

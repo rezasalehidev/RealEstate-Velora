@@ -18,17 +18,19 @@ const EXTERIOR = [
   'photo-1518780664697-55e3ad937233',
 ]
 const INTERIOR = [
-  'photo-1745794621090-d856c53b0cc2',
+  'photo-1600585154340-be6161a56a0c',
   'photo-1560448204-e02f11c3d0e2',
   'photo-1593696140826-c58b021acf8b',
   'photo-1560185127-6ed189bf02f4',
 ]
 
+const toImgUrl = (val: string) => (val.startsWith('http') ? val : img(val))
+
 const gallery = (main: string, i: number) => [
-  main,
-  INTERIOR[i % INTERIOR.length],
-  EXTERIOR[(i + 3) % EXTERIOR.length],
-  INTERIOR[(i + 2) % INTERIOR.length],
+  toImgUrl(main),
+  toImgUrl(INTERIOR[i % INTERIOR.length]),
+  toImgUrl(EXTERIOR[(i + 3) % EXTERIOR.length]),
+  toImgUrl(INTERIOR[(i + 2) % INTERIOR.length]),
 ]
 
 export const properties: Property[] = [

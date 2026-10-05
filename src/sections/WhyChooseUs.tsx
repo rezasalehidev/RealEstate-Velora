@@ -1,48 +1,60 @@
 import StatItem from '../components/StatItem'
 import { ArrowRightIcon } from '../components/icons'
 import { Link } from 'react-router-dom'
-
-const stats = [
-  { value: '12K+', label: 'Happy Clients' },
-  { value: '500+', label: 'Properties Listed' },
-  { value: '25+', label: 'Cities' },
-  { value: '98%', label: 'Success Rate' },
-]
+import { useLanguage } from '../context/LanguageContext'
 
 export default function WhyChooseUs() {
+  const { t, isRTL, language, formatNumber } = useLanguage()
+
+  const stats = [
+    { value: language === 'fa' ? '۱۲K+' : '12K+', label: t('statHappyClients') },
+    { value: language === 'fa' ? '۵۰۰+' : '500+', label: t('statPropertiesSold') },
+    { value: language === 'fa' ? '۲۵+' : '25+', label: language === 'fa' ? 'شهر فعال' : 'Active Cities' },
+    { value: language === 'fa' ? '۹۸%' : '98%', label: language === 'fa' ? 'رضایت مشتریان' : 'Success Rate' },
+  ]
+
   return (
     <section className="py-16 lg:py-24 bg-cream">
       <div className="container-premium">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          {/* Left: Image with overlay text */}
+          {/* Image with overlay text */}
           <div className="relative rounded-3xl overflow-hidden h-80 sm:h-96 lg:h-[560px]">
             <img
               src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1000&q=80"
-              alt="Luxury living room"
+              alt="Luxury architectural living room"
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-navy/60 to-transparent" />
-            <div className="absolute bottom-8 left-8">
-              <p className="font-script text-5xl lg:text-6xl text-white leading-tight">
-                More<br />Than Just<br />a Home
+            <div className="absolute bottom-8 ltr:left-8 rtl:right-8">
+              <p className={`text-4xl sm:text-5xl lg:text-6xl text-white leading-tight ${
+                language === 'fa' ? 'font-bold font-persian' : 'font-script'
+              }`}>
+                {language === 'fa' ? (
+                  <>فراتر از<br />تنها یک خانه</>
+                ) : (
+                  <>More<br />Than Just<br />a Home</>
+                )}
               </p>
             </div>
           </div>
 
-          {/* Right: Content */}
+          {/* Content */}
           <div>
-            <p className="eyebrow mb-4">WHY CHOOSE EVERLIGHT</p>
+            <p className="eyebrow mb-4">{t('whyEyebrow')}</p>
             <h2 className="text-section font-bold text-navy mb-4">
-              More Than Properties.<br />We Build Futures.
+              {t('whyTitle')}
             </h2>
             <p className="text-navy-300 text-lg leading-relaxed mb-8">
-              Everlight helps you buy, sell, and rent properties with confidence. Our team of experts brings deep market knowledge, personalized service, and a commitment to finding the perfect match for your lifestyle and investment goals.
+              {t('whySubtitle')}
             </p>
             <div className="grid grid-cols-2 gap-6 mb-8">
-              {stats.map(s => <StatItem key={s.label} {...s} />)}
+              {stats.map(s => (
+                <StatItem key={s.label} {...s} />
+              ))}
             </div>
             <Link to="/about" className="btn-accent">
-              Get Started <ArrowRightIcon className="w-4 h-4" />
+              <span>{t('navAbout')}</span>
+              <ArrowRightIcon className={`w-4 h-4 ${isRTL ? 'rtl-flip' : ''}`} />
             </Link>
           </div>
         </div>

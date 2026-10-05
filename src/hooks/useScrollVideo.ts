@@ -15,20 +15,6 @@ import { useEffect, useRef } from 'react'
 const FALLBACK_DURATION = 5.125
 const SCRUB_END_PROGRESS = 0.72 // Video scrubbing spans 0% to 72% of the Hero scroll timeline
 
-function getChapterTitle(time: number): string {
-  if (time < 1.3) return '01 // SUNSET EXTERIOR & PATIO'
-  if (time < 2.6) return '02 // REFLECTIVE INFINITY POOL'
-  if (time < 3.9) return '03 // ARCHITECTURAL GLASS ATRIUM'
-  return '04 // GRAND LIVING SANCTUARY'
-}
-
-function formatTime(seconds: number): string {
-  const s = Math.max(0, seconds)
-  const mins = Math.floor(s / 60)
-  const secs = (s % 60).toFixed(1)
-  return `${mins < 10 ? '0' : ''}${mins}:${parseFloat(secs) < 10 ? '0' : ''}${secs}s`
-}
-
 export function useScrollVideo() {
   const containerRef = useRef<HTMLElement>(null)
   const videoLayerRef = useRef<HTMLDivElement>(null)
@@ -36,10 +22,6 @@ export function useScrollVideo() {
   const overlayRef = useRef<HTMLDivElement>(null)
   const initialContentRef = useRef<HTMLDivElement>(null)
   const climaxContentRef = useRef<HTMLDivElement>(null)
-  const hudRef = useRef<HTMLDivElement>(null)
-  const hudProgressBarRef = useRef<HTMLDivElement>(null)
-  const hudTimeRef = useRef<HTMLSpanElement>(null)
-  const hudChapterRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     const container = containerRef.current
@@ -48,10 +30,6 @@ export function useScrollVideo() {
     const overlay = overlayRef.current
     const initialContent = initialContentRef.current
     const climaxContent = climaxContentRef.current
-    const hud = hudRef.current
-    const hudProgressBar = hudProgressBarRef.current
-    const hudTime = hudTimeRef.current
-    const hudChapter = hudChapterRef.current
 
     if (!container || !videoLayer || !video) return
 
@@ -189,30 +167,9 @@ export function useScrollVideo() {
           pendingTargetTime = null
           seekTo(next)
         }
-      } else {
-        // Before user interacts, track current video time for HUD
-        smoothedTime = video.currentTime || 0
       }
 
-      // --- 2. HUD Scrubber & Chapter Cues ---
-      if (hud && hudProgressBar && hudTime && hudChapter) {
-        if (rawProgress > 0.02 && rawProgress < 0.72) {
-          hud.style.opacity = '1'
-          hud.style.transform = 'translate(-50%, 0)'
-          hud.style.pointerEvents = 'auto'
-
-          const scrubRatio = Math.min(1, Math.max(0, smoothedTime / videoDuration))
-          hudProgressBar.style.transform = `scaleX(${scrubRatio})`
-          hudTime.textContent = `${formatTime(smoothedTime)} / ${formatTime(videoDuration)}`
-          hudChapter.textContent = getChapterTitle(smoothedTime)
-        } else {
-          hud.style.opacity = '0'
-          hud.style.transform = 'translate(-50%, 12px)'
-          hud.style.pointerEvents = 'none'
-        }
-      }
-
-      // --- 3. Initial Hero Content Fade Out (0.0 -> 0.16) ---
+      // --- 2. Initial Hero Content Fade Out (0.0 -> 0.16) ---
       if (initialContent) {
         if (rawProgress <= 0.18) {
           const p = rawProgress / 0.16
@@ -319,9 +276,5 @@ export function useScrollVideo() {
     overlayRef,
     initialContentRef,
     climaxContentRef,
-    hudRef,
-    hudProgressBarRef,
-    hudTimeRef,
-    hudChapterRef,
   }
 }
