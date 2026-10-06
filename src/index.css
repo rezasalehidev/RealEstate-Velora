@@ -93,13 +93,23 @@
   pointer-events: none;
 }
 
-.hero-video-layer video {
+.hero-poster,
+.hero-frame-canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.hero-poster {
   object-fit: cover;
   object-position: center center;
   transform: scale(1.06);
   transform-origin: center center;
+}
+
+.hero-frame-canvas {
+  display: block;
 }
 
 .hero-overlay {

@@ -8,7 +8,7 @@ export default function Hero() {
   const {
     containerRef,
     videoLayerRef,
-    videoRef,
+    canvasRef,
     overlayRef,
     initialContentRef,
     climaxContentRef,
@@ -19,21 +19,20 @@ export default function Hero() {
   return (
     <section ref={containerRef} className="hero-scroll-container">
       <div className="hero-sticky">
-        {/* Video layer — full-bleed cinematic 3D walkthrough */}
+        {/* Frame sequence — full-bleed cinematic 3D walkthrough (scroll-scrubbed) */}
         <div
           ref={videoLayerRef}
           className="hero-video-layer"
           aria-label="Interactive 3D architectural fly-through of luxury modern home."
         >
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            preload="auto"
-            tabIndex={-1}
-          >
-            <source src="/hero-3d.mp4" type="video/mp4" />
-          </video>
+          <img
+            className="hero-poster"
+            src="/hero-frames/poster.webp"
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+          />
+          <canvas ref={canvasRef} className="hero-frame-canvas" aria-hidden="true" />
         </div>
 
         {/* Cinematic gradient overlay */}
