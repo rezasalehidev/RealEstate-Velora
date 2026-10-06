@@ -118,9 +118,25 @@ export function useScrollVideo() {
     window.addEventListener('touchmove', lockScrollControl, { passive: true })
     window.addEventListener('keydown', lockScrollControl, { passive: true })
 
-    // Continuous 60fps render loop
+    // IntersectionObserver to pause the 60fps loop when Hero is off-screen (saves 100% CPU/GPU)
+    let isVisible = true
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = entry.isIntersecting
+        if (isVisible && isRunning && animFrameId === null) {
+          animFrameId = requestAnimationFrame(render)
+        }
+      },
+      { rootMargin: '250px 0px 250px 0px' }
+    )
+    observer.observe(container)
+
+    // Efficient 60fps render loop
     const render = () => {
-      if (!isRunning) return
+      if (!isRunning || !isVisible) {
+        animFrameId = null
+        return
+      }
 
       const rect = container.getBoundingClientRect()
       const scrollable = rect.height - window.innerHeight
@@ -261,6 +277,7 @@ export function useScrollVideo() {
     return () => {
       isRunning = false
       if (animFrameId) cancelAnimationFrame(animFrameId)
+      observer.disconnect()
       window.removeEventListener('wheel', lockScrollControl)
       window.removeEventListener('touchmove', lockScrollControl)
       window.removeEventListener('keydown', lockScrollControl)

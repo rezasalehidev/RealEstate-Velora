@@ -19,7 +19,9 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   })
 
   useEffect(() => {
-    localStorage.setItem('everlight-favorites', JSON.stringify(favorites))
+    try {
+      localStorage.setItem('everlight-favorites', JSON.stringify(favorites))
+    } catch {}
   }, [favorites])
 
   const toggleFavorite = (id: string) => {
